@@ -14,7 +14,11 @@ An interactive Streamlit-based chatbot that analyzes retail sales data and provi
 - Streamlit
 - Pandas
 - Matplotlib
+- sklearn
+- LinearRegression
+- RandomForestClassifier
 
 ▶️ Run Locally
 pip install -r requirements.txt
 streamlit run apps.py
+

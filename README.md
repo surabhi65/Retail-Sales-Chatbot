@@ -37,6 +37,11 @@ DataForge Analytics is an intelligent, enterprise-style data analytics dashboard
 
 * Download cleaned & filtered dataset instantly
 
+OUTPUT
+<img width="1846" height="947" alt="dataforgeanalysis" src="https://github.com/user-attachments/assets/ffdd855b-30e6-4ffb-8d4d-5a2c0868398f" />
+
+
+
 🛠️ Tech Stack
 
 * Python 🐍

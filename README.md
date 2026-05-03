@@ -2,7 +2,7 @@
 
 📌 Overview
 
-DataForge Analytics** is an intelligent, enterprise-style data analytics dashboard built using Streamlit.It allows users to upload any CSV/Excel file and instantly generate interactive visualizations, insights, and business intelligence dashboards.This project simulates a real-world BI (Business Intelligence) tool with automated data processing and visualization.
+DataForge Analytics is an intelligent, enterprise-style data analytics dashboard built using Streamlit.It allows users to upload any CSV/Excel file and instantly generate interactive visualizations, insights, and business intelligence dashboards.This project simulates a real-world BI (Business Intelligence) tool with automated data processing and visualization.
 
 🚀 Key Features
 

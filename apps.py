@@ -3,270 +3,312 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
-from sklearn.linear_model import LinearRegression, LogisticRegression
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score
 import warnings
 warnings.filterwarnings('ignore')
 
+st.set_page_config(
+    page_title="DataForge Analytics",
+    page_icon="🔥",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
-st.set_page_config(page_title="Retail Analytics Pro Dashboard", layout="wide", initial_sidebar_state="expanded")
 st.markdown("""
 <style>
-.main { background-color: #0E1117; }
-section[data-testid="stSidebar"] { background-color: #111827; }
-.metric-card {
-    background: linear-gradient(135deg, #1f2937, #111827);
-    padding: 20px; border-radius: 15px; text-align: center;
-    color: white; box-shadow: 0px 4px 15px rgba(0,0,0,0.4);
+/* MAIN BACKGROUND */
+.main { background: linear-gradient(135deg, #0E1117 0%, #1A1F2E 100%); }
+
+section[data-testid="stSidebar"] { 
+    background: linear-gradient(135deg, #111827 0%, #1F2937 100%);
+    border-right: 1px solid #0ea5e9;
 }
-.metric-value { font-size: 28px; font-weight: bold; }
-.metric-label { font-size: 14px; opacity: 0.8; }
+.metric-container {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2) !important;
+    padding: 20px !important; 
+    border-radius: 15px !important;
+    box-shadow: 0 8px 32px rgba(102, 126, 234, 0.3);
+    border: 1px solid rgba(255,255,255,0.1);
+    transition: all 0.3s ease;
+}
+.metric-container:hover { 
+    transform: translateY(-3px); 
+    box-shadow: 0 15px 40px rgba(102, 126, 234, 0.4); 
+}
+section[data-testid="stSidebar"] h3 { 
+    color: #0ea5e9 !important; 
+    font-weight: 700 !important;
+    text-shadow: 0 0 10px rgba(14, 165, 233, 0.5);
+}
+section[data-testid="stSidebar"] label { 
+    color: #e0f2fe !important; 
+    font-weight: 500 !important;
+}
+section[data-testid="stSidebar"] div[data-baseweb="select"] {
+    background: linear-gradient(135deg, #0ea5e9, #0284c7) !important;
+    border: 2px solid #0369a1 !important;
+    border-radius: 10px !important;
+}
+section[data-testid="stSidebar"] .stSlider > div > div > div {
+    background: linear-gradient(135deg, #0ea5e9, #0284c7) !important;
+    border-radius: 10px !important;
+}
+section[data-testid="stSidebar"] div[role="combobox"] {
+    background: linear-gradient(135deg, #0ea5e9, #0284c7) !important;
+    border: 2px solid #0369a1 !important;
+    border-radius: 10px !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
-REPURCHASE_ORDERS_THRESHOLD = 5
-REPURCHASE_SALES_THRESHOLD = 2000
-
+@st.cache_data
+def smart_load_any_file(uploaded_file):
+    """🚀 DataForge file loader - enterprise-grade"""
+    try:
+        if uploaded_file.name.endswith('.csv'):
+            df = pd.read_csv(uploaded_file)
+        else:
+            df = pd.read_excel(uploaded_file)
+        
+        if df.columns.duplicated().any():
+            cols = list(df.columns)
+            seen = {}
+            for i, col in enumerate(cols):
+                base = col
+                counter = 1
+                while col in seen:
+                    col = f"{base}_{counter}"
+                    counter += 1
+                seen[col] = True
+                cols[i] = col
+            df.columns = cols
+        
+        df.columns = (df.columns.astype(str)
+                     .str.lower().str.strip()
+                     .str.replace(' ', '_')
+                     .str.replace('-', '_')
+                     .str.replace('[()]', '', regex=True)
+                     .str.replace('.', '_'))
+        return df
+    except Exception as e:
+        st.error(f"❌ File error: {str(e)}")
+        return pd.DataFrame()
 
 @st.cache_data
-def load_data(uploaded_file):
-    """Load and preprocess CSV data."""
-    data = pd.read_csv(uploaded_file)
-    data["Order Date"] = pd.to_datetime(data["Order Date"], dayfirst=True)
-    data["year"] = data["Order Date"].dt.year
-    data["month_num"] = data["Order Date"].dt.month
-    data["month_name"] = data["Order Date"].dt.strftime("%B")
-    return data
-
-def apply_filters(data):
-    """Apply all sidebar filters."""
-    st.sidebar.markdown("## 🔎 Filters")
-    st.sidebar.divider()
-    
-    filtered_data = data.copy()
-    
-    
-    years = ["All"] + sorted(data["year"].unique())
-    selected_year = st.sidebar.selectbox("Select Year", years)
-    if selected_year != "All":
-        filtered_data = filtered_data[filtered_data["year"] == selected_year]
-    
-    
-    categories = ["All"] + sorted(filtered_data["Category"].unique())
-    selected_category = st.sidebar.selectbox("Select Category", categories)
-    if selected_category != "All":
-        filtered_data = filtered_data[filtered_data["Category"] == selected_category]
-    
-    regions = ["All"] + sorted(filtered_data["Region"].unique())
-    selected_region = st.sidebar.selectbox("Select Region", regions)
-    if selected_region != "All":
-        filtered_data = filtered_data[filtered_data["Region"] == selected_region]
-    
-  
-    customers = ["All"] + sorted(filtered_data["Customer Name"].unique())
-    selected_customer = st.sidebar.selectbox("Select Customer", customers)
-    if selected_customer != "All":
-        filtered_data = filtered_data[filtered_data["Customer Name"] == selected_customer]
-    
-    return filtered_data
+def detect_columns(df):
+    """🔍 Auto-detect column types"""
+    numeric_cols = df.select_dtypes(include=np.number).columns.tolist()
+    categorical_cols = df.select_dtypes(include='object').columns.tolist()
+    return numeric_cols, categorical_cols
 
 @st.cache_data
-def compute_metrics(filtered_data):
-    """Compute key metrics from filtered data."""
-    total_sales = filtered_data["Sales"].sum()
-    total_orders = filtered_data["Order ID"].nunique()
-    total_customers = filtered_data["Customer ID"].nunique()
-    total_products = filtered_data["Product Name"].nunique()
-    top_category = filtered_data.groupby("Category")["Sales"].sum().idxmax()
-    
-    return {
-        'total_sales': total_sales, 
-        'total_orders': total_orders,
-        'total_customers': total_customers, 
-        'total_products': total_products,
-        'top_category': top_category
-    }
+def detect_date_column(df):
+    """📅 Smart date detection"""
+    for col in df.columns:
+        if any(x in col for x in ["date", "month", "year", "time"]):
+            try:
+                pd.to_datetime(df[col], errors='coerce')
+                return col
+            except:
+                continue
+    return None
 
+st.sidebar.markdown("# 🔥 **DataForge Analytics**")
+uploaded_file = st.sidebar.file_uploader(
+    "📁 Upload CSV/Excel", 
+    type=['csv', 'xlsx', 'xls']
+)
 
-@st.cache_data
-def train_models(data):
-    """Train ML models on full dataset."""
+if uploaded_file:
+    with st.spinner("🔥 DataForge Analysis Engine Active..."):
+        raw_df = smart_load_any_file(uploaded_file)
     
-    customer_df = data.groupby("Customer Name").agg({
-        "Order ID": "count", "Sales": "sum"
-    }).reset_index().rename(columns={"Order ID": "Total Orders", "Sales": "Total Sales"})
-    
-    customer_df["Purchased Again"] = (
-        (customer_df["Total Orders"] > REPURCHASE_ORDERS_THRESHOLD) &
-        (customer_df["Total Sales"] > REPURCHASE_SALES_THRESHOLD)
-    ).astype(int)
-    
-    X = customer_df[["Total Orders", "Total Sales"]]
-    y = customer_df["Purchased Again"]
-    
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
-    model = LogisticRegression()
-    model.fit(X_train, y_train)
-    accuracy = accuracy_score(y_test, model.predict(X_test))
-   
-    yearly_sales = data.groupby("year")["Sales"].sum().reset_index()
-    forecast_model = LinearRegression()
-    forecast_model.fit(yearly_sales[["year"]], yearly_sales["Sales"])
-    
-    return customer_df, model, accuracy, forecast_model
-
-uploaded_file = st.sidebar.file_uploader("📁 Upload Sales CSV", type="csv")
-
-if uploaded_file is not None:
-    
-    data = load_data(uploaded_file)
-    st.sidebar.success(f"✅ Data loaded! {len(data)} rows")
-    
-   
-    filtered_data = apply_filters(data)
-    
-    metrics = compute_metrics(filtered_data)
-    
-   
-    customer_df, model, accuracy, forecast_model = train_models(data)
-    
-    st.title("🤖 Retail Analytics Pro Dashboard")
-    
-    tab1, tab2, tab3, tab4 = st.tabs(["📊 Analytics", "🔮 Prediction", "📈 Forecast", "💬 Chatbot"])
-    
-    with tab1:
-        st.subheader("📊 Executive Overview")
+    if not raw_df.empty:
+        numeric_cols, categorical_cols = detect_columns(raw_df)
+        date_col = detect_date_column(raw_df)
+        
+        if not numeric_cols:
+            st.error("❌ No numeric columns. Upload data with numbers.")
+            st.stop()
+        
+        metric_col = st.sidebar.selectbox(
+            "📊 Main Metric", numeric_cols, index=0
+        )
+        
+        st.sidebar.markdown("## 🔎 **Enterprise Filters**")
+        df = raw_df.copy()
+        
+        for col in categorical_cols[:5]:
+            unique_vals = df[col].dropna().unique()
+            if len(unique_vals) <= 50:
+                selected_vals = st.sidebar.multiselect(
+                    f"{col.title()}",
+                    options=unique_vals,
+                    default=unique_vals[:3]
+                )
+                if selected_vals:
+                    df = df[df[col].isin(selected_vals)]
+        
+        for col in numeric_cols[:3]:
+            if col != metric_col:
+                min_val, max_val = float(df[col].min()), float(df[col].max())
+                if min_val != max_val:
+                    selected_range = st.sidebar.slider(
+                        f"{col.title()} Range",
+                        min_value=min_val, max_value=max_val,
+                        value=(min_val, max_val),
+                        step=(max_val-min_val)/100
+                    )
+                    df = df[(df[col] >= selected_range[0]) & (df[col] <= selected_range[1])]
+        
+        st.markdown("### 🔥 **DataForge Analytics Platform**")
+        st.caption("🚀 Universal CSV/Excel → Instant Executive Intelligence")
+        
+        total_value = df[metric_col].sum()
+        growth_pct = None
+        
+        if date_col and metric_col and len(df) > 1:
+            try:
+                trend_df = df.groupby(date_col)[metric_col].sum().reset_index()
+                trend_df = trend_df.sort_values(date_col)
+                if len(trend_df) >= 2:
+                    current = trend_df.iloc[-1][metric_col]
+                    previous = trend_df.iloc[-2][metric_col]
+                    if previous != 0:
+                        growth_pct = ((current - previous) / previous) * 100
+            except:
+                pass
+        
         col1, col2, col3, col4 = st.columns(4)
-        
-        def kpi_card(title, value):
-            st.markdown(f"""
-                <div class="metric-card">
-                    <div class="metric-value">{value}</div>
-                    <div class="metric-label">{title}</div>
-                </div>
-            """, unsafe_allow_html=True)
-        
-        with col1: kpi_card("💰 Total Sales", f"${metrics['total_sales']:,.0f}")
-        with col2: kpi_card("🧾 Total Orders", metrics['total_orders'])
-        with col3: kpi_card("👥 Customers", metrics['total_customers'])
-        with col4: kpi_card("📦 Products", metrics['total_products'])
+        with col1:
+            st.metric(f"💰 {metric_col.title()}", f"{total_value:,.0f}",
+                     delta=f"{growth_pct:.1f}%" if growth_pct else None)
+        with col2: st.metric("📊 Filtered Rows", f"{len(df):,}")
+        with col3: st.metric("🎯 Categories", f"{len(categorical_cols)}")
+        with col4: st.metric("📈 Quality", f"{(1-df.isnull().mean().mean())*100:.1f}%")
         
         st.divider()
+        col_export, _ = st.columns([1, 4])
+        with col_export:
+            csv_filtered = df.to_csv(index=False).encode('utf-8')
+            timestamp = pd.Timestamp.now().strftime('%Y%m%d_%H%M')
+            st.download_button(label="💾 Export Clean Data",data=csv_filtered,file_name=f"dataforge_filtered_{timestamp}.csv",mime="text/csv")
         
-        st.subheader("📈 Monthly Sales Trend")
-        monthly_sales = filtered_data.groupby(["year", "month_num"])["Sales"].sum().reset_index()
-        monthly_sales["Date"] = pd.to_datetime(
-            monthly_sales["year"].astype(str) + "-" + 
-            monthly_sales["month_num"].astype(str) + "-01"
-        )
-        fig_trend = px.line(monthly_sales, x="Date", y="Sales", markers=True)
-        fig_trend.update_layout(template="plotly_dark")
-        st.plotly_chart(fig_trend, use_container_width=True)
+        tab1, tab2, tab3, tab4 = st.tabs(["📈 Trends", "🥧 Contribution", "🏆 Leaderboard", "🔍 Intelligence"])
         
-        st.subheader("💼 Sales by Category")
-        sales_by_cat = filtered_data.groupby("Category")["Sales"].sum().reset_index()
-        fig_cat = px.bar(sales_by_cat, x="Category", y="Sales", 
-                        color="Sales", color_continuous_scale="Teal", text_auto=True)
-        fig_cat.update_layout(template="plotly_dark")
-        st.plotly_chart(fig_cat, use_container_width=True)
-        st.success(f"🏆 Top Category: {metrics['top_category']}")
-        
-        st.subheader("🌍 Sales by Region")
-        sales_by_region = filtered_data.groupby("Region")["Sales"].sum().reset_index()
-        fig_region = px.pie(sales_by_region, names="Region", values="Sales", hole=0.5)
-        fig_region.update_layout(template="plotly_dark")
-        st.plotly_chart(fig_region, use_container_width=True)
-    
-    with tab2:
-        st.subheader("🔮 Customer Purchase Prediction")
-        cust_select = st.selectbox("Select Customer", customer_df["Customer Name"])
-        
-        if st.button("🔮 Predict Purchase Again", use_container_width=True):
-            cust_data = customer_df[customer_df["Customer Name"] == cust_select]
-            if not cust_data.empty:
-                input_vals = [[cust_data["Total Orders"].values[0], cust_data["Total Sales"].values[0]]]
-                pred = model.predict(input_vals)[0]
-                prob = model.predict_proba(input_vals)[0][1]
-                
-                if pred == 1:
-                    st.success(f"✅ Likely to purchase again! ({prob:.1%} probability)")
-                else:
-                    st.error(f"❌ Unlikely to purchase again ({prob:.1%} probability)")
-                
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.metric("📊 Total Orders", cust_data["Total Orders"].values[0])
-                with col2:
-                    st.metric("💰 Total Sales", f"${cust_data['Total Sales'].values[0]:,.0f}")
-                st.metric("🎯 Model Accuracy", f"{accuracy:.1%}")
+        with tab1:
+            if date_col and metric_col:
+                trend_df = df.groupby(date_col)[metric_col].sum().reset_index()
+                fig = px.line(trend_df.sort_values(date_col), x=date_col, y=metric_col,
+                            title=f"📈 {metric_col.title()} Trend", markers=True)
+                fig.update_layout(template="plotly_dark", height=500)
+                st.plotly_chart(fig, use_container_width=True)
             else:
-                st.error("❌ No data for selected customer")
-   
-    with tab3:
-        st.subheader("📈 Sales Forecast (Next 4 Years)")
+                st.info("📅 Date column needed for trends")
         
-        yearly_sales = data.groupby("year")["Sales"].sum().reset_index()
-        last_year = yearly_sales["year"].max()
-        future_years = np.array([[last_year + i] for i in range(1, 5)])
-        predicted_sales = forecast_model.predict(future_years)
+        with tab2:
+            if categorical_cols:
+                contrib_col = st.selectbox("🏷️ By:", categorical_cols)
+                contrib_df = (df.groupby(contrib_col)[metric_col].sum()
+                             .reset_index().sort_values(metric_col, ascending=False).head(15))
+                
+                fig = px.pie(contrib_df, names=contrib_col, values=metric_col,
+                           hole=0.4, title=f"🥧 {contrib_col.title()} Share")
+                fig.update_traces(textinfo='percent+label')
+                fig.update_layout(template="plotly_dark", height=500)
+                st.plotly_chart(fig, use_container_width=True)
+                st.dataframe(contrib_df)
         
-        forecast_df = pd.DataFrame({
-            "Year": future_years.flatten(),
-            "Predicted Sales": predicted_sales
-        })
+        with tab3:
+            if categorical_cols:
+                rank_col = st.selectbox("🏆 Rank:", categorical_cols, key="rank")
+                order = st.radio("Show:", ["Top 10", "Bottom 10"], horizontal=True)
+                
+                rank_df = df.groupby(rank_col)[metric_col].sum().reset_index()
+                n = 10
+                
+                if order == "Top 10":
+                    rank_df = rank_df.nlargest(n, metric_col)
+                else:
+                    rank_df = rank_df.nsmallest(n, metric_col)
+                
+                fig = px.bar(rank_df, x=metric_col, y=rank_col, orientation='h',
+                           title=f"{order} {rank_col.title()}", text=metric_col)
+                fig.update_layout(template="plotly_dark", height=500,
+                               yaxis_categoryorder='array', 
+                               yaxis_categoryarray=rank_df[rank_col].tolist())
+                st.plotly_chart(fig, use_container_width=True)
+                st.dataframe(rank_df.round(2))
         
-        fig_forecast = go.Figure()
-        fig_forecast.add_trace(go.Scatter(
-            x=yearly_sales["year"], y=yearly_sales["Sales"],
-            mode="lines+markers", name="Actual", line=dict(color='cyan')
-        ))
-        fig_forecast.add_trace(go.Scatter(
-            x=forecast_df["Year"], y=forecast_df["Predicted Sales"],
-            mode="lines+markers", name="Forecast", line=dict(color='orange', dash='dash')
-        ))
-        fig_forecast.update_layout(template="plotly_dark", title="Sales Forecast")
-        st.plotly_chart(fig_forecast, use_container_width=True)
-        
-        st.dataframe(forecast_df, use_container_width=True)
-    
-    
-    with tab4:
-        st.subheader("💬 Retail Sales Chatbot")
-        
-        CHAT_RESPONSES = {
-            "total sales": lambda: f"💰 Total Sales: ${metrics['total_sales']:,.0f}",
-            "top category": lambda: f"🏆 Top Category: {metrics['top_category']}",
-            "total customers": lambda: f"👥 Total Customers: {metrics['total_customers']}",
-            "total products": lambda: f"📦 Total Products: {metrics['total_products']}",
-            "top product": lambda: filtered_data.groupby("Product Name")["Sales"].sum().idxmax(),
-            "top customer": lambda: filtered_data.groupby("Customer Name")["Sales"].sum().idxmax(),
-            "total orders": lambda: f"🧾 Total Orders: {metrics['total_orders']}"
-        }
-        
-        user_input = st.text_input("💭 Ask about your sales data (e.g., 'total sales', 'top product')")
-        if st.button("🤖 Get Answer", use_container_width=True) and user_input:
-            query_lower = user_input.lower()
-            response_found = False
+        with tab4:
+            col1, col2 = st.columns(2)
+            with col1:
+                st.subheader("🔍 Missing Values")
+                missing = df.isnull().sum()
+                missing_cols = missing[missing > 0].sort_values(ascending=False)
+                
+                if len(missing_cols) > 0:
+                    total_missing = missing_cols.sum()
+                    total_cells = len(df) * len(df.columns)
+                    completeness_pct = (1 - total_missing/total_cells) * 100
+                    
+                    col_a, col_b = st.columns(2)
+                    with col_a:
+                        st.metric("🚨 Total Missing", f"{total_missing:,}")
+                    with col_b:
+                        st.metric("📊 %  Complete", f"{completeness_pct:.1f}%")
+                    
+                    missing_df = missing_cols.reset_index().rename(columns={0: "Count"})
+                    st.dataframe(missing_df, use_container_width=True)
+                    
+                    if len(missing_cols) > 0:
+                        top_missing_col = missing_cols.index[0]
+                        available_cols = ['product_id', 'product_name', top_missing_col, 'category']
+                        safe_cols = [col for col in df.columns if col in available_cols]
+                        
+                        if len(safe_cols) >= 2:  
+                            sample_rows = df[df[top_missing_col].isnull()][safe_cols].head(5)
+                            with st.expander(f"📋 Sample rows missing '{top_missing_col}' ({len(df[df[top_missing_col].isnull()])} rows)"):
+                                st.dataframe(sample_rows)
+                        else:
+                            st.info("⚠️ Can't show sample rows - insufficient columns")
+                else:
+                    st.success("✅ Perfect data! No missing values found.")
             
-            for key, func in CHAT_RESPONSES.items():
-                if key in query_lower:
-                    st.success(func())
-                    response_found = True
-                    break
-            
-            if not response_found:
-                st.info("🤖 Try asking: 'total sales', 'top category', 'top product', 'total customers'...")
-        
-        st.info("🔧 **Pro Tip**: Filters update all charts & metrics in real-time!")
+            with col2:
+                st.subheader("📊 Summary Statistics")
+                desc = df.describe().round(2)
+                st.dataframe(desc, use_container_width=True)
+                
+                st.subheader("🏷️ Column Types")
+                dtype_df = pd.DataFrame({
+                    'Column': df.columns,
+                    'Type': df.dtypes,
+                    'Non-Null': [f"{len(df)-df[col].isnull().sum():,}" for col in df.columns],
+                    'Missing': [f"{df[col].isnull().sum():,}" for col in df.columns]
+                })
+                st.dataframe(dtype_df, use_container_width=True)
 
 else:
-    st.warning("👈 **Please upload your sales CSV file in the sidebar to get started!**")
-    st.info("📊 **Supported format**: CSV with columns like Order ID, Order Date, Customer Name, Category, Sales, Region")
-
-st.markdown("---")
-
-
-
-        
-
+    st.markdown("""
+    <div style="text-align: center; padding: 4rem 2rem;">
+        <h1 style="color: #0ea5e9; font-size: 4rem; margin-bottom: 1rem; text-shadow: 0 0 20px rgba(14,165,233,0.5);">
+            🔥 DataForge Analytics
+        </h1>
+        <h2 style="color: #fff; font-size: 2rem; margin-bottom: 2rem;">
+            Universal Enterprise Intelligence
+        </h2>
+        <p style="color: #aaa; font-size: 1.4rem; max-width: 700px; margin: 0 auto;">
+            🚀 Upload ANY CSV/Excel → Instant executive dashboard with AI-powered insights
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    st.markdown("""
+    ### ✨ **Production Features**
+    - **💎 Light Blue Enterprise Filters** - Auto-generated
+    - **📈 Real Growth Tracking** - Live deltas  
+    - **🔥 Universal Loading** - Any messy CSV/Excel
+    - **⚡ Cached Performance** - Enterprise speed
+    - **💾 Timestamped Exports** - Production ready
+    - **🔍 Enhanced Data Quality** - Missing values analysis + samples
+    """)
